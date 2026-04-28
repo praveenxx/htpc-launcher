@@ -18,8 +18,13 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$REPO_DIR"
 
+echo "==> Installing JS dependencies..."
+pnpm install --frozen-lockfile --ignore-scripts
+# esbuild's postinstall downloads the native binary; re-run it explicitly
+# after --ignore-scripts so vite has a working esbuild for the Linux host.
+node node_modules/esbuild/install.js
+
 echo "==> Building frontend (pnpm)..."
-pnpm install --frozen-lockfile
 pnpm build
 
 echo "==> Vendoring Cargo dependencies..."
