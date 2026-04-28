@@ -7,9 +7,9 @@
 #
 # Prerequisites (one-time):
 #   flatpak install flathub \
-#     org.gnome.Platform//47 \
-#     org.gnome.Sdk//47 \
-#     org.freedesktop.Sdk.Extension.rust-stable//24.08
+#     org.gnome.Platform//50 \
+#     org.gnome.Sdk//50 \
+#     org.freedesktop.Sdk.Extension.rust-stable//25.08
 
 set -euo pipefail
 
