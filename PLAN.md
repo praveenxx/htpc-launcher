@@ -16,35 +16,44 @@
 - [x] .gitignore in place
 - [x] Fullscreen window: dark background (#0a0a0a), centered title text
 - [x] tauri.conf.json: fullscreen, no decorations, 1920×1080
-- [ ] Verify build on macOS (user confirms)
-- [ ] Commit and tag v0.0.1
+- [x] Verify build on macOS (user confirms)
+- [x] Commit and tag v0.0.1
 
-### Phase 1 — Layout Shell
+### Phase 1 — Layout Shell ✅
 
-- Sidebar component (left, ~280px, 5 hardcoded categories)
-- Grid component (right, 4 columns, 8 hardcoded placeholder cards)
-- TV-scale typography: ≥24px body, ≥32px headings
-- CSS hover/focus states only (no gamepad wiring yet)
+- [x] Sidebar component (left, ~280px, 5 hardcoded categories)
+- [x] Grid component (right, 4 columns, 8 hardcoded placeholder cards)
+- [x] TV-scale typography: ≥24px body, ≥32px headings
+- [x] CSS hover/focus states only (no gamepad wiring yet)
+- [ ] Verify on macOS, commit and tag v0.1.0
 
-### Phase 2 — Gamepad Navigation
+### Phase 2 — Gamepad Navigation ✅
 
-- `useGamepad` hook polling at 60fps via requestAnimationFrame
-- Roving tabindex pattern across sidebar + grid
-- D-pad + left stick: move focus
-- A = activate, B = back, Start = settings modal placeholder
-- GPU-accelerated focus ring animation
+- [x] `useGamepad` hook polling at 60fps via requestAnimationFrame
+- [x] Roving tabindex pattern across sidebar + grid
+- [x] D-pad + left stick: move focus
+- [x] A = activate, B = back, Start = settings modal placeholder
+- [x] GPU-accelerated focus ring animation (pulsing box-shadow)
+- [ ] Verify on macOS + DualSense, commit and tag v0.2.0
 
-### Phase 3 — Real App Launching
+### Phase 3 — Real App Launching ✅
 
-- Tauri command `launch_app(exec, args)` with fork-and-detach
-- TOML config with 5 hardcoded apps (Firefox, Steam, VLC, etc.)
-- Pressing A on a card launches the app; launcher stays alive
+- [x] Tauri command `launch_app(exec, args)` with fork-and-detach (`process_group(0)`)
+- [x] TOML config at `~/.config/htpc-launcher/apps.toml` — defaults written on first run
+- [x] `get_apps` command loads config into Tauri State, frontend fetches on mount
+- [x] Pressing A on a card invokes `launch_app`; launcher stays alive
+- [x] "Launching…" overlay on card + error toast for failed launches
+- [ ] Verify on macOS + Bazzite VM, commit and tag v0.3.0
 
-### Phase 4 — Auto-Discovery
+### Phase 4 — Auto-Discovery ✅
 
-- Unified app list from: Flatpak (`flatpak list`), .desktop files, Steam VDF
-- Each app: id, display_name, exec_command, icon_path, source_type
-- "Refresh apps" action in UI
+- [x] `.desktop` scanner — /usr/share/applications, /var/lib/flatpak/exports/…, ~/.local/share/…
+- [x] Flatpak fallback via `flatpak list --app` for Flatpaks without .desktop files
+- [x] Steam VDF parser — libraryfolders.vdf + appmanifest_*.acf, launches via `-applaunch`
+- [x] TOML-pinned apps take precedence; discovered apps fill the rest
+- [x] Source badge on cards (Flatpak / Steam)
+- [x] Y / △ button → refresh; "Discovering…" indicator in sidebar + header
+- [ ] Verify on Bazzite VM with real Flatpak + Steam library, commit and tag v0.4.0
 
 ### Phase 5 — Config UI
 
