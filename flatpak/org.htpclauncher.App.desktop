@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=HTPC Launcher
+Comment=10-foot UI app launcher for Bazzite
+Exec=htpc-launcher
+Icon=org.htpclauncher.App
+Type=Application
+Categories=Game;
+StartupNotify=false

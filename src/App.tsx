@@ -2,7 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Sidebar from "./components/Sidebar";
 import Grid from "./components/Grid";
-import { CATEGORIES, type AppEntry } from "./data";
+import Settings from "./components/Settings";
+import { ASSIGNABLE_CATEGORIES, CATEGORIES, type AppEntry } from "./data";
 import { useGamepad } from "./hooks/useGamepad";
 import type { GamepadAction } from "./hooks/useGamepad";
 import "./App.css";
@@ -15,7 +16,13 @@ interface FocusState {
   gridIndex: number;
 }
 
+interface SettingsFocus {
+  rowIndex: number;
+  moving: boolean; // in drag-to-reorder mode
+}
+
 export default function App() {
+  // ── Main grid state ────────────────────────────────────────────────────────
   const [apps, setApps] = useState<AppEntry[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [focus, setFocus] = useState<FocusState>({
@@ -23,52 +30,42 @@ export default function App() {
     sidebarIndex: 0,
     gridIndex: 0,
   });
+
+  // ── Settings state ─────────────────────────────────────────────────────────
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsApps, setSettingsApps] = useState<AppEntry[]>([]);
+  const [settingsFocus, setSettingsFocus] = useState<SettingsFocus>({
+    rowIndex: 0,
+    moving: false,
+  });
+
+  // ── Feedback state ─────────────────────────────────────────────────────────
   const [launchingId, setLaunchingId] = useState<string | null>(null);
   const [launchError, setLaunchError] = useState<string | null>(null);
 
-  const runDiscovery = useCallback(() => {
-    if (discoveringRef.current) return;
-    setDiscovering(true);
-    const startedAt = Date.now();
-    invoke<AppEntry[]>("discover_apps")
-      .then((result) => {
-        setApps(result);
-        // Don't touch focus here — grid position is preserved.
-        // safeGridIndex (below) handles clamping if the new list is shorter.
-      })
-      .catch(console.error)
-      .finally(() => {
-        // Keep the "Discovering…" indicator visible for at least 500 ms so
-        // the user can see that a refresh happened.
-        const elapsed = Date.now() - startedAt;
-        setTimeout(() => setDiscovering(false), Math.max(0, 500 - elapsed));
-      });
-  }, []);
-
-  // Run discovery on mount
-  useEffect(() => {
-    runDiscovery();
-  }, [runDiscovery]);
-
-  // Auto-clear launch error after 3 s
-  useEffect(() => {
-    if (!launchError) return;
-    const t = setTimeout(() => setLaunchError(null), 3000);
-    return () => clearTimeout(t);
-  }, [launchError]);
-
+  // ── Derived values ─────────────────────────────────────────────────────────
   const activeCategoryId = CATEGORIES[focus.sidebarIndex].id;
   const filteredApps =
     activeCategoryId === "all"
       ? apps
       : apps.filter((a) => a.category === activeCategoryId);
 
-  // If discovery returns a shorter list, clamp the displayed index without
-  // mutating focus state (which would cause a jarring jump mid-navigation).
+  // Clamp grid cursor to list bounds without forcing a state write.
   const safeGridIndex = Math.min(focus.gridIndex, Math.max(0, filteredApps.length - 1));
 
-  // Refs so the gamepad handler sees current values without stale closures
+  // ── Refs (always current, zero stale-closure risk) ─────────────────────────
+  const discoveringRef = useRef(false);
+  discoveringRef.current = discovering;
+
+  const settingsOpenRef = useRef(false);
+  settingsOpenRef.current = settingsOpen;
+
+  const settingsAppsRef = useRef<AppEntry[]>([]);
+  settingsAppsRef.current = settingsApps;
+
+  const settingsFocusRef = useRef<SettingsFocus>({ rowIndex: 0, moving: false });
+  settingsFocusRef.current = settingsFocus;
+
   const focusRef = useRef(focus);
   focusRef.current = focus;
 
@@ -78,30 +75,136 @@ export default function App() {
   const maxGridIndexRef = useRef(0);
   maxGridIndexRef.current = Math.max(0, filteredApps.length - 1);
 
-  const settingsOpenRef = useRef(false);
-  settingsOpenRef.current = settingsOpen;
+  // ── Discovery ──────────────────────────────────────────────────────────────
+  const runDiscovery = useCallback(() => {
+    if (discoveringRef.current) return;
+    setDiscovering(true);
+    const startedAt = Date.now();
+    invoke<AppEntry[]>("discover_apps")
+      .then(setApps)
+      .catch(console.error)
+      .finally(() => {
+        const elapsed = Date.now() - startedAt;
+        setTimeout(() => setDiscovering(false), Math.max(0, 500 - elapsed));
+      });
+  }, []);
 
-  const discoveringRef = useRef(false);
-  discoveringRef.current = discovering;
+  useEffect(() => { runDiscovery(); }, [runDiscovery]);
 
+  // Auto-clear launch errors after 3 s.
+  useEffect(() => {
+    if (!launchError) return;
+    const t = setTimeout(() => setLaunchError(null), 3000);
+    return () => clearTimeout(t);
+  }, [launchError]);
+
+  // ── Gamepad handler ────────────────────────────────────────────────────────
   const handleAction = useCallback(
     (action: GamepadAction) => {
+
+      // ── Settings open/close ──────────────────────────────────────────────
       if (action === "menu") {
-        setSettingsOpen((prev) => !prev);
+        if (settingsOpenRef.current) {
+          // Save & close
+          const toSave = settingsAppsRef.current;
+          setSettingsOpen(false);
+          invoke("save_apps", { apps: toSave })
+            .then(() => runDiscovery())
+            .catch((e: unknown) => setLaunchError(String(e)));
+        } else {
+          // Load TOML apps then open
+          invoke<AppEntry[]>("get_apps")
+            .then((manual) => {
+              setSettingsApps(manual);
+              setSettingsFocus({ rowIndex: 0, moving: false });
+              setSettingsOpen(true);
+            })
+            .catch(console.error);
+        }
         return;
       }
 
+      // ── Settings navigation ──────────────────────────────────────────────
+      if (settingsOpenRef.current) {
+        const { rowIndex, moving } = settingsFocusRef.current;
+        const sApps = settingsAppsRef.current;
+
+        if (moving) {
+          // Drag-to-reorder mode: D-pad moves item, A or B exits.
+          if (action === "up" && rowIndex > 0) {
+            const next = [...sApps];
+            [next[rowIndex - 1], next[rowIndex]] = [next[rowIndex], next[rowIndex - 1]];
+            setSettingsApps(next);
+            setSettingsFocus((f) => ({ ...f, rowIndex: rowIndex - 1 }));
+          } else if (action === "down" && rowIndex < sApps.length - 1) {
+            const next = [...sApps];
+            [next[rowIndex + 1], next[rowIndex]] = [next[rowIndex], next[rowIndex + 1]];
+            setSettingsApps(next);
+            setSettingsFocus((f) => ({ ...f, rowIndex: rowIndex + 1 }));
+          } else if (action === "confirm" || action === "back") {
+            setSettingsFocus((f) => ({ ...f, moving: false }));
+          }
+          return;
+        }
+
+        // Browse mode
+        switch (action) {
+          case "up":
+            setSettingsFocus((f) => ({ ...f, rowIndex: Math.max(0, rowIndex - 1) }));
+            break;
+          case "down":
+            setSettingsFocus((f) => ({
+              ...f,
+              rowIndex: Math.min(sApps.length - 1, rowIndex + 1),
+            }));
+            break;
+          case "left":
+          case "right": {
+            if (!sApps.length) break;
+            const app = sApps[rowIndex];
+            const idx = ASSIGNABLE_CATEGORIES.indexOf(
+              app.category as (typeof ASSIGNABLE_CATEGORIES)[number],
+            );
+            const safeIdx = idx < 0 ? 0 : idx;
+            const nextIdx =
+              action === "right"
+                ? (safeIdx + 1) % ASSIGNABLE_CATEGORIES.length
+                : (safeIdx - 1 + ASSIGNABLE_CATEGORIES.length) % ASSIGNABLE_CATEGORIES.length;
+            const next = [...sApps];
+            next[rowIndex] = { ...app, category: ASSIGNABLE_CATEGORIES[nextIdx] };
+            setSettingsApps(next);
+            break;
+          }
+          case "confirm":
+            // Enter drag-to-reorder mode
+            setSettingsFocus((f) => ({ ...f, moving: true }));
+            break;
+          case "refresh":
+            // △/Y = toggle hidden
+            if (!sApps.length) break;
+            const next = [...sApps];
+            next[rowIndex] = { ...next[rowIndex], hidden: !next[rowIndex].hidden };
+            setSettingsApps(next);
+            break;
+          case "back": {
+            // Save & close (same as menu)
+            const toSave = settingsAppsRef.current;
+            setSettingsOpen(false);
+            invoke("save_apps", { apps: toSave })
+              .then(() => runDiscovery())
+              .catch((e: unknown) => setLaunchError(String(e)));
+            break;
+          }
+        }
+        return;
+      }
+
+      // ── Main UI: refresh & launch ────────────────────────────────────────
       if (action === "refresh") {
         runDiscovery();
         return;
       }
 
-      if (settingsOpenRef.current) {
-        if (action === "back") setSettingsOpen(false);
-        return;
-      }
-
-      // App launch from grid — use the clamped index to match what's on screen
       if (action === "confirm" && focusRef.current.area === "grid") {
         const visibleIndex = Math.min(
           focusRef.current.gridIndex,
@@ -117,6 +220,7 @@ export default function App() {
         return;
       }
 
+      // ── Main UI: navigation ──────────────────────────────────────────────
       setFocus((prev) => {
         const { area, sidebarIndex, gridIndex } = prev;
         const maxGrid = maxGridIndexRef.current;
@@ -147,10 +251,9 @@ export default function App() {
               const next = gridIndex + GRID_COLS;
               return next <= maxGrid ? { ...prev, gridIndex: next } : prev;
             }
-            case "left": {
+            case "left":
               if (gridIndex % GRID_COLS === 0) return { ...prev, area: "sidebar" };
               return { ...prev, gridIndex: gridIndex - 1 };
-            }
             case "right": {
               const isLastInRow = gridIndex % GRID_COLS === GRID_COLS - 1;
               if (isLastInRow || gridIndex >= maxGrid) return prev;
@@ -169,10 +272,10 @@ export default function App() {
 
   useGamepad(handleAction);
 
-  const handleSidebarSelect = (index: number) => {
+  const handleSidebarSelect = (index: number) =>
     setFocus((prev) => ({ ...prev, sidebarIndex: index, area: "sidebar", gridIndex: 0 }));
-  };
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="relative flex h-screen w-screen overflow-hidden bg-[#0a0a0a] text-white">
       <Sidebar
@@ -192,13 +295,11 @@ export default function App() {
       />
 
       {settingsOpen && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
-          <div className="rounded-2xl bg-[#1c1c1e] px-16 py-12 text-center">
-            <h2 className="mb-4 text-5xl font-bold text-white">Settings</h2>
-            <p className="text-3xl text-white/50">Coming in Phase 5</p>
-            <p className="mt-8 text-2xl text-white/30">Press B or Start to close</p>
-          </div>
-        </div>
+        <Settings
+          apps={settingsApps}
+          focusIndex={settingsFocus.rowIndex}
+          isMoving={settingsFocus.moving}
+        />
       )}
 
       {launchError && (

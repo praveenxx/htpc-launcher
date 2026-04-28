@@ -10,6 +10,16 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+fn is_false(b: &bool) -> bool {
+    !b
+}
+
+// True when the process is running inside a Flatpak sandbox.
+// Child processes must go through flatpak-spawn --host to reach the real system.
+fn is_sandboxed() -> bool {
+    std::env::var("FLATPAK_ID").is_ok()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppEntry {
     pub id: String,
@@ -19,10 +29,11 @@ pub struct AppEntry {
     pub args: Vec<String>,
     pub category: String,
     pub icon_color: String,
-    /// "desktop" | "flatpak" | "steam" | "" (manual/TOML).
-    /// Omitted from TOML when empty so the config file stays clean.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub source: String,
+    /// Omitted from TOML when false so the config stays readable.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub hidden: bool,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -53,6 +64,7 @@ fn default_config() -> AppConfig {
                 category: "utilities".into(),
                 icon_color: "#e25c00".into(),
                 source: String::new(),
+                hidden: false,
             },
             AppEntry {
                 id: "steam".into(),
@@ -62,6 +74,7 @@ fn default_config() -> AppConfig {
                 category: "games".into(),
                 icon_color: "#1b2838".into(),
                 source: String::new(),
+                hidden: false,
             },
             AppEntry {
                 id: "vlc".into(),
@@ -71,6 +84,7 @@ fn default_config() -> AppConfig {
                 category: "media".into(),
                 icon_color: "#f07000".into(),
                 source: String::new(),
+                hidden: false,
             },
             AppEntry {
                 id: "kodi".into(),
@@ -80,6 +94,7 @@ fn default_config() -> AppConfig {
                 category: "media".into(),
                 icon_color: "#17b2e8".into(),
                 source: String::new(),
+                hidden: false,
             },
             AppEntry {
                 id: "retroarch".into(),
@@ -89,6 +104,7 @@ fn default_config() -> AppConfig {
                 category: "games".into(),
                 icon_color: "#2c2c2c".into(),
                 source: String::new(),
+                hidden: false,
             },
         ],
     }
@@ -111,21 +127,39 @@ fn load_or_create_config() -> AppConfig {
 
 // ─── Commands ────────────────────────────────────────────────────────────────
 
+/// Returns only the TOML-pinned apps (including hidden ones) for the settings screen.
 #[tauri::command]
 fn get_apps(state: State<AppState>) -> Vec<AppEntry> {
     state.apps.lock().unwrap().clone()
 }
 
-/// Merge TOML-pinned apps with system-discovered apps and return the full list.
-/// Manual (TOML) entries take precedence and always appear first.
+/// Persist a new pinned-app list to TOML and update in-memory state.
+#[tauri::command]
+fn save_apps(state: State<AppState>, apps: Vec<AppEntry>) -> Result<(), String> {
+    let path = config_path();
+    let cfg = AppConfig { apps: apps.clone() };
+    let serialized = toml::to_string(&cfg).map_err(|e| format!("Serialize error: {e}"))?;
+    std::fs::write(&path, serialized).map_err(|e| format!("Write error: {e}"))?;
+    *state.apps.lock().unwrap() = apps;
+    Ok(())
+}
+
+/// Merge visible TOML-pinned apps with system-discovered apps.
+/// Hidden TOML apps are excluded from the result but still block their id
+/// from reappearing via auto-discovery.
 #[tauri::command]
 fn discover_apps(state: State<AppState>) -> Vec<AppEntry> {
-    let manual = state.apps.lock().unwrap().clone();
-    let manual_ids: HashSet<String> = manual.iter().map(|a| a.id.clone()).collect();
+    let all_manual = state.apps.lock().unwrap().clone();
+
+    // All TOML ids block duplicates from discovery, even if hidden.
+    let manual_ids: HashSet<String> = all_manual.iter().map(|a| a.id.clone()).collect();
+
+    // Only visible TOML apps are shown in the grid.
+    let visible_manual: Vec<AppEntry> = all_manual.into_iter().filter(|a| !a.hidden).collect();
 
     let discovered = discovery::discover_all();
 
-    let mut result = manual;
+    let mut result = visible_manual;
     for app in discovered {
         if !manual_ids.contains(&app.id) {
             result.push(app);
@@ -136,8 +170,16 @@ fn discover_apps(state: State<AppState>) -> Vec<AppEntry> {
 
 #[tauri::command]
 fn launch_app(exec: String, args: Vec<String>) -> Result<(), String> {
-    let mut cmd = Command::new(&exec);
-    cmd.args(&args)
+    let (bin, bin_args): (String, Vec<String>) = if is_sandboxed() {
+        let mut a = vec!["--host".to_string(), exec.clone()];
+        a.extend(args);
+        ("flatpak-spawn".to_string(), a)
+    } else {
+        (exec.clone(), args)
+    };
+
+    let mut cmd = Command::new(&bin);
+    cmd.args(&bin_args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -164,7 +206,12 @@ pub fn run() {
         .manage(AppState {
             apps: Mutex::new(config.apps),
         })
-        .invoke_handler(tauri::generate_handler![get_apps, discover_apps, launch_app])
+        .invoke_handler(tauri::generate_handler![
+            get_apps,
+            save_apps,
+            discover_apps,
+            launch_app
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

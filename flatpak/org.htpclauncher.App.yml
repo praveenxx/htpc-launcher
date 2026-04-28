@@ -1,0 +1,55 @@
+app-id: org.htpclauncher.App
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: htpc-launcher
+
+finish-args:
+  # Gamepad / input devices
+  - --device=all
+  # Display
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  # Config file + Steam library live under $HOME
+  - --filesystem=home
+  # System-wide .desktop files for auto-discovery
+  - --filesystem=/usr/share/applications:ro
+  # System-wide Flatpak .desktop exports for auto-discovery
+  - --filesystem=/var/lib/flatpak:ro
+  # Launch host processes and query host Flatpak via flatpak-spawn --host
+  - --talk-name=org.freedesktop.Flatpak
+
+modules:
+  - name: htpc-launcher
+    buildsystem: simple
+
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      prepend-ld-library-path: /usr/lib/sdk/rust-stable/lib
+      env:
+        CARGO_HOME: /run/build/htpc-launcher/cargo
+        CARGO_NET_OFFLINE: 'true'
+
+    sources:
+      # Full repo root (includes pre-built dist/ and vendored vendor/)
+      - type: dir
+        path: ..
+
+    build-commands:
+      # Wire cargo to the vendored source tree created by build.sh
+      - mkdir -p .cargo
+      - |
+        printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "vendor"\n' \
+          > .cargo/config.toml
+      # Compile (frontend assets already embedded via pre-built dist/)
+      - cargo build --offline --release --manifest-path src-tauri/Cargo.toml
+      # Install binary
+      - install -Dm755 src-tauri/target/release/htpc-launcher /app/bin/htpc-launcher
+      # Install .desktop and icon
+      - install -Dm644 flatpak/org.htpclauncher.App.desktop
+          /app/share/applications/org.htpclauncher.App.desktop
+      - install -Dm644 src-tauri/icons/128x128.png
+          /app/share/icons/hicolor/128x128/apps/org.htpclauncher.App.png

@@ -53,20 +53,27 @@
 - [x] TOML-pinned apps take precedence; discovered apps fill the rest
 - [x] Source badge on cards (Flatpak / Steam)
 - [x] Y / △ button → refresh; "Discovering…" indicator in sidebar + header
-- [ ] Verify on Bazzite VM with real Flatpak + Steam library, commit and tag v0.4.0
+- [x] Verified on Bazzite VM, commit and tag v0.4.0
 
-### Phase 5 — Config UI
+### Phase 5 — Config UI ✅
 
-- Settings screen via Start button, fully gamepad-navigable
-- Reorder / hide apps, change category
-- Persists to TOML
+- [x] Settings screen via Start button, fully gamepad-navigable
+- [x] Reorder / hide apps, change category
+- [x] Persists to TOML via `save_apps` Tauri command
+- [x] `get_apps` / `save_apps` / `discover_apps` commands wired with shared AppState
+- [x] Drag-to-reorder mode (A), category cycling (◀▶), visibility toggle (△), B = save & close
+- [x] Hidden apps blocked from reappearing in auto-discovery
+- [ ] Verify on Bazzite + DualSense, commit and tag v0.5.0
 
 ### Phase 6 — Bazzite Packaging
 
-- Flatpak manifest (org.htpclauncher.App.yml)
-- Build + install on Bazzite VM
-- Final UX test on real Bazzite box + TV + DualSense
-- README install docs
+- [x] `flatpak-spawn --host` routing: launch_app + discover_flatpak_extra detect FLATPAK_ID and proxy through host when sandboxed
+- [x] Flatpak manifest: org.htpclauncher.App.yml (org.gnome.Platform//47, rust-stable extension, finish-args for gamepad/filesystem/D-Bus)
+- [x] flatpak/build.sh: pnpm build → cargo vendor → flatpak-builder --install --user
+- [x] flatpak/org.htpclauncher.App.desktop
+- [ ] Run flatpak/build.sh on Bazzite VM
+- [ ] Final UX test on real Bazzite box + TV + DualSense
+- [ ] Commit and tag v0.6.0
 
 ## Key Constraints
 
