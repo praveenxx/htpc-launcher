@@ -22,7 +22,7 @@ echo "==> Installing JS dependencies..."
 pnpm install --frozen-lockfile --ignore-scripts
 # esbuild's postinstall downloads the native binary; re-run it explicitly
 # after --ignore-scripts so vite has a working esbuild for the Linux host.
-node node_modules/esbuild/install.js
+pnpm rebuild esbuild
 
 echo "==> Building frontend (pnpm)..."
 pnpm build
