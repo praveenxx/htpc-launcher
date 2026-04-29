@@ -19,8 +19,11 @@ finish-args:
   - --filesystem=/usr/share/applications:ro
   # System-wide Flatpak .desktop exports for auto-discovery
   - --filesystem=/var/lib/flatpak:ro
-  # Launch host processes and query host Flatpak via flatpak-spawn --host
+  # Launch host processes and query host Flatpak via flatpak-spawn --host.
+  # --allow=devel unlocks the HostCommand D-Bus method; without it the sandbox
+  # rejects flatpak-spawn --host with NotAllowed even if the talk-name is set.
   - --talk-name=org.freedesktop.Flatpak
+  - --allow=devel
 
 modules:
   - name: htpc-launcher
