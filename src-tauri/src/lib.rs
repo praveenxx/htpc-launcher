@@ -169,11 +169,18 @@ fn discover_apps(state: State<AppState>) -> Vec<AppEntry> {
 }
 
 #[tauri::command]
-fn launch_app(exec: String, args: Vec<String>) -> Result<(), String> {
+fn launch_app(id: String, exec: String, args: Vec<String>) -> Result<(), String> {
     let (bin, bin_args): (String, Vec<String>) = if is_sandboxed() {
-        let mut a = vec!["--host".to_string(), exec.clone()];
-        a.extend(args);
-        ("flatpak-spawn".to_string(), a)
+        // flatpak-spawn --host is blocked by Bazzite's sandbox policy.
+        // Route through the OpenURI portal instead: xdg-open in GNOME Platform
+        // runtimes is portal-aware and forwards to org.freedesktop.portal.OpenURI
+        // on the host, which is always permitted without extra manifest flags.
+        let uri = if let Some(appid) = id.strip_prefix("steam:") {
+            format!("steam://rungameid/{appid}")
+        } else {
+            format!("application://{id}.desktop")
+        };
+        ("xdg-open".to_string(), vec![uri])
     } else {
         (exec.clone(), args)
     };

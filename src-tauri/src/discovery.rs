@@ -178,20 +178,14 @@ pub fn discover_desktop() -> Vec<AppEntry> {
 
 /// Run `flatpak list --app` and return entries whose app-id was NOT already
 /// captured by a .desktop file.
+/// When running inside the Flatpak sandbox, `flatpak` is not on PATH and this
+/// call fails silently — system Flatpak apps are already covered by the
+/// .desktop scanner reading /var/lib/flatpak/exports/share/applications/.
 pub fn discover_flatpak_extra(known_ids: &std::collections::HashSet<String>) -> Vec<AppEntry> {
-    // Inside a Flatpak sandbox `flatpak` only sees the sandbox; use flatpak-spawn
-    // to query the host instead.
-    let sandboxed = std::env::var("FLATPAK_ID").is_ok();
-    let out = if sandboxed {
-        Command::new("flatpak-spawn")
-            .args(["--host", "flatpak", "list", "--app", "--columns=name,application"])
-            .output()
-    } else {
-        Command::new("flatpak")
-            .args(["list", "--app", "--columns=name,application"])
-            .output()
-    };
-    let Ok(out) = out else {
+    let Ok(out) = Command::new("flatpak")
+        .args(["list", "--app", "--columns=name,application"])
+        .output()
+    else {
         return vec![];
     };
 

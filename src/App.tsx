@@ -213,7 +213,7 @@ export default function App() {
         const app = filteredAppsRef.current[visibleIndex];
         if (app) {
           setLaunchingId(app.id);
-          invoke("launch_app", { exec: app.exec, args: app.args })
+          invoke("launch_app", { id: app.id, exec: app.exec, args: app.args })
             .catch((e: unknown) => setLaunchError(String(e)))
             .finally(() => setTimeout(() => setLaunchingId(null), 700));
         }
